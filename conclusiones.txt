@@ -1,0 +1,29 @@
+Conclusiones del ejercicio - Autenticacion API Demoblaze
+=======================================================
+
+Panorama funcional
+- La suite valida el registro y autenticacion en `https://api.demoblaze.com`, cubriendo altas unicas, bloqueo por duplicidad y respuesta a contrasenas invalidas.
+- Las credenciales se generan al vuelo con UUID dentro de las features, evitando dependencias externas y permitiendo ejecuciones paralelas sin interferencias.
+
+Rutas de ejecucion dentro del proyecto
+- Raiz del proyecto de pruebas: `karate-EJERCICIO2/`. Desde esta carpeta se ejecutan todos los comandos Maven (`mvn clean test`, `mvn test`).
+- Runner principal: `src/test/java/com/ejercicio2/TestRunner.java`; invoca el feature maestro y permite ejecucion directa desde el IDE o con `mvn -Dtest=com.ejercicio2.TestRunner test`.
+- Feature maestro: `src/test/resources/DemoblazeAuth.feature`. Orquesta los escenarios y reutiliza helpers mediante el tag `call`.
+- Helpers reutilizables: `src/test/resources/helpers/create-user.feature` y `signup-once.feature` concentran pasos comunes; `helpers/normalize-error.js` homogeneiza mensajes de error antes de las aserciones.
+- Artefactos de configuracion: `pom.xml` define dependencias de Karate 1.5.x y Surefire; no requiere variables de entorno externas ni ajustes de maquina, basta con tener Java 17 y Maven disponibles.
+
+Flujos validados
+- Registro exitoso: Se consume `/signup` con usuario dinamico y se asegura HTTP 200 con mensaje `Sign up successful`.
+- Registro duplicado: Se reintenta con el mismo usuario dentro de la misma ejecucion y se constata el rechazo con mensaje `This user already exist`.
+- Login exitoso: `/login` retorna `""` o `Auth_token`; el feature acepta ambos resultados segun la respuesta real del servicio.
+- Login fallido: Al forzar contrasena invalida se valida la respuesta `Wrong password`.
+
+Reportes y evidencias
+- Karate HTML: `target/karate-reports/DemoblazeAuth.html` muestra detalle paso a paso con request/response.
+- Surefire: `target/surefire-reports/*.txt` registra el resultado del runner JUnit.
+- Salidas JSON: `target/karate-reports/*.json` pueden insumo para dashboards si se requiere trazabilidad adicional.
+
+Recomendaciones operativas
+- Ejecutar siempre `mvn clean test` desde la raiz antes de empaquetar, asegurando reportes frescos en `target/`.
+- Al compartir resultados, incluir `target/karate-reports/` completo y un README con los pasos de ejecucion para reproducibilidad.
+- Mantener versionado el proyecto y etiquetar commits o archivos empaquetados con fecha/hora para identificar rapidamente cada corrida.
