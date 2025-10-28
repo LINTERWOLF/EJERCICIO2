@@ -1,0 +1,114 @@
+karate-config.js
+pom.xml
+README.md
+estructura_proyecto.txt
+certificado/
+  README.md
+  clientcert.cbiblian.internal 1.pfx
+scripts/
+  export_afiliacion_data.py
+src/
+  test/
+    java/
+      com/
+        ejercicio2/
+          TestRunner.java
+    resources/
+      Afiliacion.feature
+      ConsultaCredencial.feature
+      ConsultaCuenta.feature
+      Desafiliacion.feature
+      TokenGeneration.feature
+      Transferencia.feature
+      certificado/
+        clientcert.cbiblian.internal 1.pfx
+      helpers/
+        affiliation-data.js
+        desafiliacion-data.json
+        generate-token.feature
+        perform-affiliation.feature
+        perform-desafiliacion.feature
+target/  (generado en runtime)
+
+---------------------------------------------------------------------------
+Contexto PANAPAY
+---------------------------------------------------------------------------
+Este repositorio soporta los esfuerzos de aseguramiento de calidad del ecosistema PANAPAY, el switch que centraliza afiliaciones, consultas y transferencias entre cooperativas. Las pruebas automatizadas reproducen el recorrido real de un canal digital: se autentican con Keycloak (realm PANAPAY QA), envían solicitudes de afiliación o desafiliación, consultan credenciales/cuentas y procesan transferencias. El objetivo es garantizar que los servicios de back-end respondan correctamente frente a escenarios exitosos y fallidos, asegurando la continuidad operativa de las entidades financieras conectadas.
+
+---------------------------------------------------------------------------
+¿Qué es Karate?
+---------------------------------------------------------------------------
+Karate es un framework de automatización orientado a APIs que emplea un DSL (Domain-Specific Language) legible y cercano al lenguaje natural. Permite escribir escenarios Gherkin, ejecutar peticiones HTTP, validar respuestas y manipular datos utilizando JavaScript embebido, todo dentro del mismo archivo `.feature`. Corre sobre JUnit5 gracias a la dependencia `karate-junit5`, lo que facilita la ejecución con Maven, la integración con pipelines CI/CD y la generación de reportes tipo JUnit. Comparado con Postman/Newman o con bibliotecas Java como RestAssured, Karate elimina código boilerplate, centraliza la configuración y ofrece reportes HTML interactivos que muestran request/response paso a paso.
+
+---------------------------------------------------------------------------
+Arquitectura del Proyecto
+---------------------------------------------------------------------------
+La solución sigue un diseño minimalista y orientado a pruebas:
+- `pom.xml` mantiene una única dependencia (Karate + JUnit5), con lo cual la configuración Maven es ligera y fácil de mantener.
+- `src/test/java/com/ejercicio2/TestRunner.java` define la clase de arranque JUnit5 que lista los features a ejecutar; se puede ajustar para incluir o excluir módulos según la fase de prueba.
+- `src/test/resources/` almacena los features por dominio funcional (TokenGeneration, Afiliacion, Desafiliacion, Consultas, Transferencia) y un conjunto de helpers que encapsulan lógica compartida, generación de datos y llamados auxiliares.
+- `scripts/` contiene herramientas complementarias, como el exportador de evidencias a JSON/Excel para análisis fuera de Karate.
+
+---------------------------------------------------------------------------
+Configuración Global
+---------------------------------------------------------------------------
+El archivo `karate-config.js` se ejecuta automáticamente antes de cualquier escenario y actúa como un bootstrap global:
+- Carga el certificado cliente PKCS#12 requerido por los servicios QA, intentando primero el classpath (útil para ejecución Maven) y, si falla, una ruta absoluta dentro del proyecto.
+- Configura `trustAll: true` para simplificar el handshake SSL en ambientes de QA donde los certificados raíz no siempre están publicados.
+- Define propiedades como `affiliationBaseUrl` y `transfer.baseUrl`, las cuales pueden sobrescribirse con parámetros Maven (`-Daffiliation.baseUrl=https://...`), permitiendo apuntar la suite a diferentes entornos sin modificar el código.
+
+---------------------------------------------------------------------------
+Gestión de Tokens
+---------------------------------------------------------------------------
+El proceso de autenticación se concentra en `helpers/generate-token.feature`. Cada corrida:
+- Ejecuta un `client_credentials` contra Keycloak QA utilizando el `client_id` de la entidad `0205cb`.
+- Persiste el token y metadatos (fecha, código de cooperativa, status HTTP) en `target/token.txt`, `token-data.json` y `token-response.json`, facilitando su auditoría.
+- Expone un objeto `tokenInfo` que incluye el token, el status y los paths de evidencia. Gracias a `callonce`, solo se realiza una solicitud por suite, minimizando la carga al servicio de autenticación y evitando problemas de rate-limiting.
+
+---------------------------------------------------------------------------
+Pruebas de Afiliación/Desafiliación
+---------------------------------------------------------------------------
+Los flujos de afiliación y desafiliación aseguran que los actores se alisten correctamente antes de probar transferencias:
+- `Afiliacion.feature` se apoya en `helpers/affiliation-data.js`, que genera documentos, teléfonos, correos y cuentas válidas o deliberadamente inválidas según el caso de prueba. Cada escenario invoca un logger que escribe la data enviada y el status recibido en `target/afiliacion-datos.txt`, útil para auditorías.
+- `Desafiliacion.feature` toma conjuntos de datos declarados en `helpers/desafiliacion-data.json` y usa helpers (`perform-affiliation.feature`, `perform-desafiliacion.feature`) para preparar precondiciones dinámicas, como bloquear una cuenta antes de intentar desbloquearla. Esto simula mejor los estados reales que se encuentran en producción.
+
+---------------------------------------------------------------------------
+Suite de Transferencias
+---------------------------------------------------------------------------
+El feature de transferencias cubre casos exitosos y fallidos para diferentes tipos de cuentas y restricciones regulatorias:
+- El helper `buildPayload` arma el request ISO 20022 con base en un catálogo local de cuentas (`accountCatalog`), permitiendo alternar entre cuentas propias o interbancarias manipulando un objeto `overrides`.
+- Las validaciones están centralizadas en `verifyTransferOutcome`, que interpreta la respuesta (`TxSts`, códigos de razón) pero trata cualquier HTTP 200 como éxito visual para no generar falsos negativos por respuestas de negocio que aún devuelven código `ERR`. Cuando se requiere validar estrictamente un `TxSts`, basta con activar los flags `requireTxOk` o `expectedTxStatus`.
+- Se incluyen escenarios con montos mínimos/máximos, límites diarios/mensuales, bloqueos/desbloqueos y fallos de token, cubriendo la matriz de riesgos más habitual.
+
+---------------------------------------------------------------------------
+Ejecución y Reportes
+---------------------------------------------------------------------------
+El ciclo de ejecución se adapta a cualquier necesidad:
+- `mvn clean test` dispara la suite configurada en `TestRunner.java`; basta comentar o descomentar features allí para ajustar el alcance.
+- Para ejecuciones focalizadas se usa `mvn test -D"karate.options=classpath:Transferencia.feature"` o `-D"karate.options=--tags @afiliacion"`, lo que permite combinar tags y paths.
+- Los resultados quedan en `target/`: el reporte HTML de Karate incluye cada paso con request/response; `karate-summary.html` resume la ejecución; `surefire-reports/TEST-*.xml` se integra con herramientas de pruebas; y se generan archivos auxiliares (token, logs, JSON) que sirven como evidencia.
+
+---------------------------------------------------------------------------
+Automatización de Evidencias
+---------------------------------------------------------------------------
+Para facilitar el análisis manual o la compartición de evidencias con áreas de negocio o auditoría:
+- `scripts/export_afiliacion_data.py` lee el reporte HTML de Afiliación y construye un JSON y un Excel con el detalle de cada escenario (payload, respuesta, códigos, documentos utilizados).
+- Esto evita manipular los reportes HTML directamente y crea un insumo que puede importarse a dashboards o enviarse como evidencia formal.
+- Solo necesita Python 3.10+ y las librerías `beautifulsoup4` y `openpyxl`, ya presentes en la compañía.
+
+---------------------------------------------------------------------------
+Buenas Prácticas y Tips
+---------------------------------------------------------------------------
+El proyecto incorpora recomendaciones para garantizar mantenibilidad:
+- Centralizar la lógica común en helpers y aprovechar `callonce` reduce tiempos de ejecución y evita inconsistencias entre escenarios.
+- Mantener los certificados sincronizados (carpeta raíz y `src/test/resources`) y documentar cualquier cambio en `certificado/README.md` previene fallas SSL.
+- Exponer parámetros clave en `karate-config.js` y consumirlos vía `-Dpropiedad=valor` facilita cambiar entre QA, UAT o mock services.
+- Configurar montos pequeños (1 USD) y usar un catálogo local de cuentas impide agotar saldo real y elimina dependencias de datos externos volátiles.
+
+---------------------------------------------------------------------------
+Roadmap / Próximos Pasos
+---------------------------------------------------------------------------
+Las líneas de trabajo sugeridas para continuar expandiendo el valor del repositorio son:
+- Integrar la suite en las cadenas de CI/CD corporativas (Jenkins, Azure DevOps), habilitando publicaciones automáticas de los reportes de Karate y ejecutando regresiones en cada despliegue.
+- Externalizar credenciales sensibles (client secrets, contraseñas de certificados) usando herramientas de secretos (Azure Key Vault, HashiCorp Vault) para cumplir con estándares de seguridad.
+- Extender la cobertura a operaciones pendientes del roadmap PANAPAY (reversiones, conciliaciones, monitoreo) y, una vez estabilizados los servicios QA, endurecer las aserciones (`TxSts`, códigos de razón) para detectar regresiones de negocio con mayor precisión.

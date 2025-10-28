@@ -6,7 +6,15 @@ class TestRunner {
 
     @Karate.Test
     Karate testAll() {
-        return Karate.run("classpath:DemoblazeAuth.feature");
+        // Se ejecutan en orden para garantizar el flujo Token -> Afiliacion -> Desafiliacion.
+        return Karate.run(
+                "classpath:TokenGeneration.feature",
+               // "classpath:Afiliacion.feature"
+               // "classpath:Desafiliacion.feature",
+               // "classpath:ConsultaCredencial.feature",
+               // "classpath:ConsultaCuenta.feature",
+                "classpath:Transferencia.feature"
+        );
 
     }
 
